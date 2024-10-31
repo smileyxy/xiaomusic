@@ -1,21 +1,18 @@
 name: ci
-
 on:
   push:
     branches:
       - "*"
   workflow_dispatch:
-
 env:
   TEST_TAG: ${{ secrets.DOCKERHUB_USERNAME }}/xiaomusic:${{ github.ref_name }}
-
 jobs:
-  build-image:
+  build-test-publish:
     runs-on: ubuntu-latest
-    # run unless event type is pull_request
     if: github.event_name != 'pull_request'
     steps:
-      - uses: actions/checkout@v3
+      - uses: actions/checkout@v4
+
       - name: Set up QEMU
         uses: docker/setup-qemu-action@v3
 
@@ -28,9 +25,6 @@ jobs:
           username: ${{ secrets.DOCKERHUB_USERNAME }}
           password: ${{ secrets.DOCKERHUB_TOKEN }}
 
-      # We have to build each platform separately because when using multi-arch
-      # builds, only one platform is being loaded into the cache. This would
-      # prevent us from testing the other platforms.
       - name: Build Docker image (linux/amd64)
         uses: docker/build-push-action@v6
         with:
@@ -86,4 +80,9 @@ jobs:
         with:
           username: ${{ secrets.DOCKERHUB_USERNAME }}
           password: ${{ secrets.DOCKERHUB_TOKEN }}
-          repository: smileyxy/xiaomusic:latest
+          repository: hanxi/xiaomusic
+
+      - name: Move cache to limit growth
+        run: |
+          rm -rf /tmp/.buildx-cache
+          mv /tmp/.buildx-cache-new /tmp/.buildx-cache
