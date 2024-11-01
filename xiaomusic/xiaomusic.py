@@ -145,7 +145,7 @@ class XiaoMusic:
 
     def setup_logger(self):
         log_format = f"%(asctime)s [{__version__}] [%(levelname)s] %(filename)s:%(lineno)d: %(message)s"
-        date_format = "[%X]"
+        date_format = "[%Y-%m-%d %H:%M:%S]"
         formatter = logging.Formatter(fmt=log_format, datefmt=date_format)
         logging.basicConfig(
             format=log_format,
@@ -838,8 +838,6 @@ class XiaoMusic:
             if opvalue.startswith("exec#"):
                 code = opvalue.split("#", 1)[1]
                 return ("exec", code)
-            return (opvalue, "")
-
             return (opvalue, oparg)
         self.log.info(f"未匹配到指令 {query} {ctrl_panel}")
         return (None, None)
