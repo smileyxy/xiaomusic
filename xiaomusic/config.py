@@ -6,22 +6,23 @@ import os
 from dataclasses import asdict, dataclass, field
 from typing import get_type_hints
 
+from xiaomusic.const import (
+    PLAY_TYPE_ALL,
+    PLAY_TYPE_ONE,
+    PLAY_TYPE_RND,
+)
 from xiaomusic.utils import validate_proxy
 
 
 # 默认口令
 def default_key_word_dict():
     return {
-        "播放歌曲": "play",
-        "播放本地歌曲": "playlocal",
-        "关机": "stop",
         "下一首": "play_next",
         "上一首": "play_prev",
         "单曲循环": "set_play_type_one",
         "全部循环": "set_play_type_all",
         "随机播放": "set_random_play",
         "分钟后关机": "stop_after_minute",
-        "播放列表": "play_music_list",
         "刷新列表": "gen_music_list",
         "加入收藏": "add_to_favorites",
         "收藏歌曲": "add_to_favorites",
@@ -47,7 +48,6 @@ KEY_WORD_ARG_BEFORE_DICT = {
 def default_key_match_order():
     return [
         "分钟后关机",
-        "播放歌曲",
         "下一首",
         "上一首",
         "单曲循环",
@@ -166,6 +166,15 @@ class Config:
     get_ask_by_mina: bool = (
         os.getenv("XIAOMUSIC_GET_ASK_BY_MINA", "false").lower() == "true"
     )
+    play_type_one_tts_msg: str = os.getenv(
+        "XIAOMUSIC_PLAY_TYPE_ONE_TTS_MSG", "已经设置为单曲循环"
+    )
+    play_type_all_tts_msg: str = os.getenv(
+        "XIAOMUSIC_PLAY_TYPE_ALL_TTS_MSG", "已经设置为全部循环"
+    )
+    play_type_rnd_tts_msg: str = os.getenv(
+        "XIAOMUSIC_PLAY_TYPE_RND_TTS_MSG", "已经设置为随机播放"
+    )
 
     def append_keyword(self, keys, action):
         for key in keys.split(","):
@@ -188,6 +197,9 @@ class Config:
         self.append_keyword(self.keywords_stop, "stop")
         self.append_keyword(self.keywords_playlist, "play_music_list")
         self.append_user_keyword()
+        self.key_match_order = [
+            x for x in self.key_match_order if x in self.key_word_dict
+        ]
 
     def __post_init__(self) -> None:
         if self.proxy:
@@ -282,3 +294,12 @@ class Config:
             os.makedirs(self.conf_path)
         cookies_path = os.path.join(self.conf_path, "yt-dlp-cookie.txt")
         return cookies_path
+
+    def get_play_type_tts(self, play_type):
+        if play_type == PLAY_TYPE_ONE:
+            return self.play_type_one_tts_msg
+        if play_type == PLAY_TYPE_ALL:
+            return self.play_type_all_tts_msg
+        if play_type == PLAY_TYPE_RND:
+            return self.play_type_rnd_tts_msg
+        return ""
