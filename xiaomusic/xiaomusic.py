@@ -50,6 +50,7 @@ from xiaomusic.utils import (
     list2str,
     parse_cookie_string,
     parse_str_to_dict,
+    save_picture_by_base64,
     traverse_music_directory,
     try_add_access_control_param,
 )
@@ -156,7 +157,7 @@ class XiaoMusic:
 
         log_file = self.config.log_file
         log_path = os.path.dirname(log_file)
-        if not os.path.exists(log_path):
+        if log_path and not os.path.exists(log_path):
             os.makedirs(log_path)
         if os.path.exists(log_file):
             os.remove(log_file)
@@ -462,6 +463,27 @@ class XiaoMusic:
                 f"{self.hostname}:{self.public_port}/picture/{encoded_name}",
             )
         return tags
+
+    # 修改标签信息
+    def set_music_tag(self, name, info):
+        if self._tag_generation_task:
+            self.log.info("tag 更新中，请等待")
+            return "Tag generation task running"
+        tags = copy.copy(self.all_music_tags.get(name, asdict(Metadata())))
+        tags["title"] = info.title
+        tags["artist"] = info.artist
+        tags["album"] = info.album
+        tags["year"] = info.year
+        tags["genre"] = info.genre
+        tags["lyrics"] = info.lyrics
+        if info.picture:
+            file_path = self.all_music[name]
+            tags["picture"] = save_picture_by_base64(
+                info.picture, self.config.picture_cache_path, file_path
+            )
+        self.all_music_tags[name] = tags
+        self.try_save_tag_cache()
+        return "OK"
 
     def get_music_url(self, name):
         if self.is_web_music(name):
@@ -950,14 +972,17 @@ class XiaoMusic:
         parts = arg1.split("|")
         list_name = parts[0]
 
+        music_name = ""
+        if len(parts) > 1:
+            music_name = parts[1]
+        return await self.do_play_music_list(did, list_name, music_name)
+
+    async def do_play_music_list(self, did, list_name, music_name=""):
         list_name = self._find_real_music_list_name(list_name)
         if list_name not in self.music_list:
             await self.do_tts(did, f"播放列表{list_name}不存在")
             return
 
-        music_name = ""
-        if len(parts) > 1:
-            music_name = parts[1]
         await self.devices[did].play_music_list(list_name, music_name)
 
     # 播放一个播放列表里第几个
@@ -992,6 +1017,9 @@ class XiaoMusic:
         if name == "":
             name = search_key
 
+        return await self.do_play(name, search_key)
+
+    async def do_play(self, did, name, search_key):
         return await self.devices[did].play(name, search_key)
 
     # 本地播放
@@ -1260,7 +1288,11 @@ class XiaoMusicDevice:
 
     @property
     def did(self):
-        return self.xiaomusic.device_id_did[self.device_id]
+        return self.device.did
+
+    @property
+    def hardware(self):
+        return self.device.hardware
 
     def get_cur_music(self):
         return self.device.cur_music
@@ -1442,7 +1474,7 @@ class XiaoMusicDevice:
             return
 
         self.log.info(f"【{name}】已经开始播放了")
-        await self.xiaomusic.analytics.send_play_event(name, sec)
+        await self.xiaomusic.analytics.send_play_event(name, sec, self.hardware)
 
         if self.device.play_type == PLAY_TYPE_SIN:
             self.log.info(f"【{name}】单曲播放时不会设置下一首歌的定时器")
