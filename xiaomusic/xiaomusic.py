@@ -28,6 +28,7 @@ from xiaomusic.const import (
     COOKIE_TEMPLATE,
     GET_ASK_BY_MINA,
     LATEST_ASK_API,
+    NEED_USE_PLAY_MUSIC_API,
     PLAY_TYPE_ALL,
     PLAY_TYPE_ONE,
     PLAY_TYPE_RND,
@@ -187,7 +188,7 @@ class XiaoMusic:
                         self.last_timestamp[did] = int(time.time() * 1000)
 
                     hardware = self.get_hardward(device_id)
-                    if hardware in GET_ASK_BY_MINA or self.config.get_ask_by_mina:
+                    if (hardware in GET_ASK_BY_MINA) or self.config.get_ask_by_mina:
                         tasks.append(self.get_latest_ask_by_mina(device_id))
                     else:
                         tasks.append(
@@ -640,13 +641,15 @@ class XiaoMusic:
                 "全部": [],  # 包含所有歌曲和所有电台
                 "下载": [],  # 下载目录下的
                 "其他": [],  # 主目录下的
+                "最近新增": [],  # 按文件时间排序
             }
         )
-        # 全部，所有，自定义歌单（收藏）
-        self.music_list["全部"] = list(self.all_music.keys())
-        self.music_list["所有歌曲"] = [
-            name for name in self.all_music.keys() if name not in self._all_radio
-        ]
+        # 最近新增(不包含网络歌单)
+        self.music_list["最近新增"] = sorted(
+            self.all_music.keys(),
+            key=lambda x: os.path.getctime(self.all_music[x]),
+            reverse=True,
+        )[: self.config.recently_added_playlist_len]
 
         # 网络歌单
         try:
@@ -654,6 +657,12 @@ class XiaoMusic:
             self._append_music_list()
         except Exception as e:
             self.log.exception(f"Execption {e}")
+
+        # 全部，所有，自定义歌单（收藏）
+        self.music_list["全部"] = list(self.all_music.keys())
+        self.music_list["所有歌曲"] = [
+            name for name in self.all_music.keys() if name not in self._all_radio
+        ]
 
         # 文件夹歌单
         for dir_name, musics in all_music_by_dir.items():
@@ -1711,6 +1720,7 @@ class XiaoMusicDevice:
         ret = None
         try:
             audio_id = await self._get_audio_id(name)
+            hardware = self.get_hardward(device_id)
             if self.config.continue_play:
                 ret = await self.xiaomusic.mina_service.play_by_music_url(
                     device_id, url, _type=1, audio_id=audio_id
@@ -1718,7 +1728,7 @@ class XiaoMusicDevice:
                 self.log.info(
                     f"play_one_url continue_play device_id:{device_id} ret:{ret} url:{url} audio_id:{audio_id}"
                 )
-            elif self.config.use_music_api:
+            elif self.config.use_music_api or (hardware in NEED_USE_PLAY_MUSIC_API):
                 ret = await self.xiaomusic.mina_service.play_by_music_url(
                     device_id, url, audio_id=audio_id
                 )
