@@ -5,9 +5,9 @@
     <meta name="viewport" content="width=device-width">
     <title>小爱音箱操控面板</title>
     <link href="https://fonts.googleapis.com/icon?family=Material+Icons" rel="stylesheet">
-    <script src="./jquery-3.7.1.min.js?version=1733743591"></script>
-    <script src="./setting.js?version=1733743591"></script>
-    <link rel="stylesheet" type="text/css" href="./main.css?version=1733743591">
+    <script src="./jquery-3.7.1.min.js?version=1734224486"></script>
+    <script src="./setting.js?version=1734224486"></script>
+    <link rel="stylesheet" type="text/css" href="./main.css?version=1734224486">
 
     <!-- Google tag (gtag.js) -->
     <script async src="https://www.googletagmanager.com/gtag/js?id=G-Z09NC1K7ZW"></script>
@@ -17,6 +17,9 @@
     gtag('js', new Date());
     gtag('config', 'G-Z09NC1K7ZW');
     </script>
+
+    <!-- umami -->
+    <script defer src="https://umami.hanxi.cc/script.js" data-website-id="7bfb0890-4115-4260-8892-b391513e7e99"></script>
 
     <!--
 <script src="https://unpkg.com/vconsole@latest/dist/vconsole.min.js"></script>
@@ -28,9 +31,7 @@ var vConsole = new window.VConsole();
   </head>
   <body>
     <h2>小爱音箱设置面板
-      (<a  id="version" href="https://github.com/hanxi/xiaomusic/blob/main/CHANGELOG.md">
-        版本未知
-      </a>)
+      (<a id="version" href="https://xdocs.hanxi.cc/issues/changelog.html">版本未知</a>)
     </h2>
     <hr>
 
@@ -95,6 +96,9 @@ var vConsole = new window.VConsole();
 
         <label for="exclude_dirs">忽略目录(逗号分割):</label>
         <input id="exclude_dirs" type="text" value="@eaDir,tmp" />
+
+        <label for="ignore_tag_dirs">不扫码标签信息目录(逗号分割):</label>
+        <input id="ignore_tag_dirs" type="text" value="" />
 
         <label for="music_path_depth">目录深度:</label>
         <input id="music_path_depth" type="number" value="10" />
@@ -192,6 +196,10 @@ var vConsole = new window.VConsole();
         <input id="keywords_playlist" type="text" value="播放列表,播放歌单" />
         <label for="keywords_stop">停止口令:</label>
         <input id="keywords_stop" type="text" value="关机,暂停,停止,停止播放" />
+        <label for="keywords_search_playlocal">本地搜索播放口令(会产生临时播放列表):</label>
+        <input id="keywords_search_playlocal" type="text" value="本地搜索播放" />
+        <label for="keywords_search_play">搜索播放口令(会产生临时播放列表):</label>
+        <input id="keywords_search_play" type="text" value="搜索播放" />
 
         <label for="enable_yt_dlp_cookies">启用yt-dlp-cookies(需要先上传yt-dlp-cookies.txt文件):</label>
         <select id="enable_yt_dlp_cookies">
@@ -261,7 +269,7 @@ var vConsole = new window.VConsole();
       <img class="qrcode" src="./qrcode.png" alt="请涵曦喝奶茶🧋">
     </div>
     <footer>
-      <p>Powered by <a href="https://github.com/hanxi/xiaomusic" target="_blank">xiaomusic</a></p>
+      <p>Powered by <a href="https://xdocs.hanxi.cc" target="_blank">XiaoMusic</a></p>
     </footer>
   </body>
 </html>

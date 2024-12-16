@@ -866,6 +866,8 @@ async def download_playlist(config, url, dirname):
         "-x",
         "--audio-format",
         "mp3",
+        "--audio-quality",
+        "0",
         "--paths",
         config.download_path,
         "-o",
@@ -899,6 +901,8 @@ async def download_one_music(config, url, name=""):
         "-x",
         "--audio-format",
         "mp3",
+        "--audio-quality",
+        "0",
         "--paths",
         config.download_path,
         "-o",
@@ -947,6 +951,7 @@ def remove_common_prefix(directory):
 
     log.info(f'Common prefix identified: "{common_prefix}"')
 
+    pattern = re.compile(r"(\d+)[\t 　]*\1")
     for filename in files:
         if filename == common_prefix:
             continue
@@ -954,6 +959,9 @@ def remove_common_prefix(directory):
         if filename.startswith(common_prefix):
             # 构造新的文件名
             new_filename = filename[len(common_prefix) :]
+            match = pattern.match(new_filename)
+            if match:
+                new_filename = match.group(1) + new_filename[match.end() :]
             # 生成完整的文件路径
             old_file_path = os.path.join(directory, filename)
             new_file_path = os.path.join(directory, new_filename)
@@ -990,3 +998,40 @@ def try_add_access_control_param(config, url):
     ).geturl()
 
     return new_url
+
+
+# 判断文件在不在排除目录列表
+def not_in_dirs(filename, ignore_absolute_dirs):
+    file_absolute_path = os.path.abspath(filename)
+    file_dir = os.path.dirname(file_absolute_path)
+    for ignore_dir in ignore_absolute_dirs:
+        if file_dir.startswith(ignore_dir):
+            log.info(f"{file_dir} in {ignore_dir}")
+            return False  # 文件在排除目录中
+
+    return True  # 文件不在排除目录中
+
+
+def is_docker():
+    return os.path.exists("/app/.dockerenv")
+
+
+def restart_xiaomusic():
+    if not is_docker():
+        ret = "xiaomusic 重启只能在 docker 中进行"
+        log.info(ret)
+        return False, ret
+    try:
+        # 重启 xiaomusic 程序
+        subprocess.run(["supervisorctl", "restart", "xiaomusic"], check=True)
+        log.info("xiaomusic 重启成功")
+    except subprocess.CalledProcessError as e:
+        log.info(f"xiaomusic 重启失败: {e}")
+        return False, "xiaomusic 重启失败"
+    return True
+
+
+def update_version(version):
+    ok, ret = restart_xiaomusic()
+    if not ok:
+        return ret

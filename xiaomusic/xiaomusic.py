@@ -49,6 +49,7 @@ from xiaomusic.utils import (
     get_local_music_duration,
     get_web_music_duration,
     list2str,
+    not_in_dirs,
     parse_cookie_string,
     parse_str_to_dict,
     save_picture_by_base64,
@@ -103,7 +104,7 @@ class XiaoMusic:
         self.update_devices()
 
         # 启动统计
-        self.analytics = Analytics(self.log)
+        self.analytics = Analytics(self.log, self.config)
 
         debug_config = deepcopy_data_no_sensitive_info(self.config)
         self.log.info(f"Startup OK. {debug_config}")
@@ -577,6 +578,9 @@ class XiaoMusic:
 
         all_music_tags = self.try_load_from_tag_cache()
         all_music_tags.update(self.all_music_tags)  # 保证最新
+
+        ignore_tag_absolute_dirs = self.config.get_ignore_tag_dirs()
+        self.log.info(f"ignore_tag_absolute_dirs: {ignore_tag_absolute_dirs}")
         for name, file_or_url in only_items.items():
             start = time.perf_counter()
             if name not in all_music_tags:
@@ -584,7 +588,9 @@ class XiaoMusic:
                     if self.is_web_music(name):
                         # TODO: 网络歌曲获取歌曲额外信息
                         pass
-                    elif os.path.exists(file_or_url):
+                    elif os.path.exists(file_or_url) and not_in_dirs(
+                        file_or_url, ignore_tag_absolute_dirs
+                    ):
                         all_music_tags[name] = extract_audio_metadata(
                             file_or_url, self.config.picture_cache_path
                         )
@@ -1029,14 +1035,39 @@ class XiaoMusic:
         if not name:
             name = search_key
 
-        return await self.do_play(did, name, search_key)
+        # 语音播放会根据歌曲匹配更新当前播放列表
+        return await self.do_play(
+            did, name, search_key, exact=True, update_cur_list=True
+        )
 
-    async def do_play(self, did, name, search_key=""):
-        return await self.devices[did].play(name, search_key)
+    # 搜索播放：会产生临时播放列表
+    async def search_play(self, did="", arg1="", **kwargs):
+        parts = arg1.split("|")
+        search_key = parts[0]
+        name = parts[1] if len(parts) > 1 else search_key
+        if not name:
+            name = search_key
+
+        # 语音搜索播放会更新当前播放列表为临时播放列表
+        return await self.do_play(
+            did, name, search_key, exact=False, update_cur_list=False
+        )
+
+    # 后台搜索播放
+    async def do_play(
+        self, did, name, search_key="", exact=False, update_cur_list=False
+    ):
+        return await self.devices[did].play(name, search_key, exact, update_cur_list)
 
     # 本地播放
     async def playlocal(self, did="", arg1="", **kwargs):
-        return await self.devices[did].playlocal(arg1)
+        return await self.devices[did].playlocal(arg1, update_cur_list=True)
+
+    # 本地搜索播放
+    async def search_playlocal(self, did="", arg1="", **kwargs):
+        return await self.devices[did].playlocal(
+            arg1, exact=False, update_cur_list=False
+        )
 
     async def play_next(self, did="", **kwargs):
         return await self.devices[did].play_next()
@@ -1356,11 +1387,16 @@ class XiaoMusicDevice:
             )
 
     # 播放歌曲
-    async def play(self, name="", search_key=""):
+    async def play(self, name="", search_key="", exact=True, update_cur_list=False):
         self._last_cmd = "play"
-        return await self._play(name=name, search_key=search_key, update_cur=True)
+        return await self._play(
+            name=name,
+            search_key=search_key,
+            exact=exact,
+            update_cur_list=update_cur_list,
+        )
 
-    async def _play(self, name="", search_key="", exact=False, update_cur=False):
+    async def _play(self, name="", search_key="", exact=True, update_cur_list=False):
         if search_key == "" and name == "":
             if self.check_play_next():
                 await self._play_next()
@@ -1375,15 +1411,20 @@ class XiaoMusicDevice:
         else:
             names = self.xiaomusic.find_real_music_name(name)
         if len(names) > 0:
-            if update_cur and len(names) > 1:  # 大于一首歌才更新
-                self._play_list = names
-                self.device.cur_playlist = "临时搜索列表"
-                self.update_playlist()
-            elif update_cur:  # 只有一首歌，append
-                self._play_list = self._play_list + names
-                self.device.cur_playlist = "临时搜索列表"
-                self.update_playlist(reorder=False)
+            if not exact:
+                if len(names) > 1:  # 大于一首歌才更新
+                    self._play_list = names
+                    self.device.cur_playlist = "临时搜索列表"
+                    self.update_playlist()
+                else:  # 只有一首歌，append
+                    self._play_list = self._play_list + names
+                    self.device.cur_playlist = "临时搜索列表"
+                    self.update_playlist(reorder=False)
             name = names[0]
+            if update_cur_list:
+                # 根据当前歌曲匹配歌曲列表
+                self.device.cur_playlist = self.find_cur_playlist(name)
+                self.update_playlist()
             self.log.debug(
                 f"当前播放列表为：{list2str(self._play_list, self.config.verbose)}"
             )
@@ -1442,7 +1483,7 @@ class XiaoMusicDevice:
         await self._play(name, exact=True)
 
     # 播放本地歌曲
-    async def playlocal(self, name):
+    async def playlocal(self, name, exact=True, update_cur_list=False):
         self._last_cmd = "playlocal"
         if name == "":
             if self.check_play_next():
@@ -1454,17 +1495,25 @@ class XiaoMusicDevice:
         self.log.info(f"playlocal. name:{name}")
 
         # 本地歌曲不存在时下载
-        names = self.xiaomusic.find_real_music_name(name)
+        if exact:
+            names = self.xiaomusic.find_real_music_name(name, n=1)
+        else:
+            names = self.xiaomusic.find_real_music_name(name)
         if len(names) > 0:
-            if len(names) > 1:  # 大于一首歌才更新
-                self._play_list = names
-                self.device.cur_playlist = "临时搜索列表"
-                self.update_playlist()
-            else:  # 只有一首歌，append
-                self._play_list = self._play_list + names
-                self.device.cur_playlist = "临时搜索列表"
-                self.update_playlist(reorder=False)
+            if not exact:
+                if len(names) > 1:  # 大于一首歌才更新
+                    self._play_list = names
+                    self.device.cur_playlist = "临时搜索列表"
+                    self.update_playlist()
+                else:  # 只有一首歌，append
+                    self._play_list = self._play_list + names
+                    self.device.cur_playlist = "临时搜索列表"
+                    self.update_playlist(reorder=False)
             name = names[0]
+            if update_cur_list:
+                # 根据当前歌曲匹配歌曲列表
+                self.device.cur_playlist = self.find_cur_playlist(name)
+                self.update_playlist()
             self.log.debug(
                 f"当前播放列表为：{list2str(self._play_list, self.config.verbose)}"
             )
@@ -1591,6 +1640,8 @@ class XiaoMusicDevice:
             "-x",
             "--audio-format",
             "mp3",
+            "--audio-quality",
+            "0",
             "--paths",
             self.download_path,
             "-o",
@@ -1927,3 +1978,27 @@ class XiaoMusicDevice:
         for key in list(d):
             val = d.pop(key)
             val.cancel_all_timer()
+
+    # 根据当前歌曲匹配歌曲列表
+    def find_cur_playlist(self, name):
+        # 匹配顺序：
+        # 1. 收藏
+        # 2. 最近新增
+        # 3. 排除（全部,所有歌曲,所有电台,临时搜索列表）
+        # 4. 所有歌曲
+        # 5. 所有电台
+        # 6. 全部
+        if name in self.xiaomusic.music_list.get("收藏", []):
+            return "收藏"
+        if name in self.xiaomusic.music_list.get("最近新增", []):
+            return "最近新增"
+        for list_name, play_list in self.xiaomusic.music_list.items():
+            if (list_name not in ["全部", "所有歌曲", "所有电台", "临时搜索列表"]) and (
+                name in play_list
+            ):
+                return list_name
+        if name in self.xiaomusic.music_list.get("所有歌曲", []):
+            return "所有歌曲"
+        if name in self.xiaomusic.music_list.get("所有电台", []):
+            return "所有电台"
+        return "全部"
