@@ -11,6 +11,7 @@ import json
 import logging
 import mimetypes
 import os
+import platform
 import random
 import re
 import shutil
@@ -27,7 +28,19 @@ import aiohttp
 import mutagen
 from mutagen.asf import ASF
 from mutagen.flac import FLAC
-from mutagen.id3 import APIC, ID3, Encoding, TextFrame, TimeStampTextFrame
+from mutagen.id3 import (
+    APIC,
+    ID3,
+    TALB,
+    TCON,
+    TDRC,
+    TIT2,
+    TPE1,
+    USLT,
+    Encoding,
+    TextFrame,
+    TimeStampTextFrame,
+)
 from mutagen.mp3 import MP3
 from mutagen.mp4 import MP4
 from mutagen.oggvorbis import OggVorbis
@@ -407,14 +420,6 @@ def no_padding(info):
     return 0
 
 
-def get_temp_dir(music_path: str):
-    # 指定临时文件的目录为 music_path 目录下的 tmp 文件夹
-    temp_dir = os.path.join(music_path, "tmp")
-    if not os.path.exists(temp_dir):
-        os.makedirs(temp_dir)  # 确保目录存在
-    return temp_dir
-
-
 def remove_id3_tags(input_file: str, config) -> str:
     audio = MP3(input_file, ID3=ID3)
 
@@ -426,7 +431,7 @@ def remove_id3_tags(input_file: str, config) -> str:
         return None
 
     music_path = config.music_path
-    temp_dir = get_temp_dir(music_path)
+    temp_dir = config.temp_dir
 
     # 构造新文件的路径
     out_file_name = os.path.splitext(os.path.basename(input_file))[0]
@@ -459,7 +464,7 @@ def remove_id3_tags(input_file: str, config) -> str:
 
 def convert_file_to_mp3(input_file: str, config) -> str:
     music_path = config.music_path
-    temp_dir = get_temp_dir(music_path)
+    temp_dir = config.temp_dir
 
     out_file_name = os.path.splitext(os.path.basename(input_file))[0]
     out_file_path = os.path.join(temp_dir, f"{out_file_name}.mp3")
@@ -526,6 +531,13 @@ def chinese_to_number(chinese):
     result = 0
     unit = 1
     num = 0
+    # 处理特殊情况：以"十"开头时，在前面加"一"
+    if chinese.startswith("十"):
+        chinese = "一" + chinese
+
+    # 如果只有一个字符且是单位，直接返回其值
+    if len(chinese) == 1 and chinese_to_arabic[chinese] >= 10:
+        return chinese_to_arabic[chinese]
     for char in reversed(chinese):
         if char in chinese_to_arabic:
             val = chinese_to_arabic[char]
@@ -536,8 +548,8 @@ def chinese_to_number(chinese):
                     unit *= val
             else:
                 num += val * unit
-        result += num
-        num = 0
+    result += num
+
     return result
 
 
@@ -569,6 +581,16 @@ class Metadata:
     picture: str = ""
     lyrics: str = ""
 
+    def __init__(self, info=None):
+        if info:
+            self.title = info.get("title", "")
+            self.artist = info.get("artist", "")
+            self.album = info.get("album", "")
+            self.year = info.get("year", "")
+            self.genre = info.get("genre", "")
+            self.picture = info.get("picture", "")
+            self.lyrics = info.get("lyrics", "")
+
 
 def _get_alltag_value(tags, k):
     v = tags.getall(k)
@@ -595,6 +617,15 @@ def _to_utf8(v):
     elif isinstance(v, list):
         return "".join(str(item) for item in v)
     return str(v)
+
+
+def save_picture_by_base64(picture_base64_data, save_root, file_path):
+    try:
+        picture_data = base64.b64decode(picture_base64_data)
+    except (TypeError, ValueError) as e:
+        log.exception(f"Error decoding base64 data: {e}")
+        return None
+    return _save_picture(picture_data, save_root, file_path)
 
 
 def _save_picture(picture_data, save_root, file_path):
@@ -723,6 +754,110 @@ def extract_audio_metadata(file_path, save_root):
     return asdict(metadata)
 
 
+def set_music_tag_to_file(file_path, info):
+    audio = mutagen.File(file_path, easy=True)
+    if audio is None:
+        log.error(f"Unable to open file {file_path}")
+        return "Unable to open file"
+
+    if isinstance(audio, MP3):
+        _set_mp3_tags(audio, info)
+    elif isinstance(audio, FLAC):
+        _set_flac_tags(audio, info)
+    elif isinstance(audio, MP4):
+        _set_mp4_tags(audio, info)
+    elif isinstance(audio, OggVorbis):
+        _set_ogg_tags(audio, info)
+    elif isinstance(audio, ASF):
+        _set_asf_tags(audio, info)
+    elif isinstance(audio, WAVE):
+        _set_wave_tags(audio, info)
+    else:
+        log.error(f"Unsupported file type for {file_path}")
+        return "Unsupported file type"
+
+    try:
+        audio.save()
+        log.info(f"Tags saved successfully to {file_path}")
+        return "OK"
+    except Exception as e:
+        log.exception(f"Error saving tags: {e}")
+        return "Error saving tags"
+
+
+def _set_mp3_tags(audio, info):
+    audio["TIT2"] = TIT2(encoding=3, text=info.title)
+    audio["TPE1"] = TPE1(encoding=3, text=info.artist)
+    audio["TALB"] = TALB(encoding=3, text=info.album)
+    audio["TDRC"] = TDRC(encoding=3, text=info.year)
+    audio["TCON"] = TCON(encoding=3, text=info.genre)
+    if info.lyrics:
+        audio["USLT"] = USLT(encoding=3, lang="eng", text=info.lyrics)
+    if info.picture:
+        with open(info.picture, "rb") as img_file:
+            image_data = img_file.read()
+        audio["APIC"] = APIC(
+            encoding=3, mime="image/jpeg", type=3, desc="Cover", data=image_data
+        )
+
+
+def _set_flac_tags(audio, info):
+    audio["TITLE"] = info.title
+    audio["ARTIST"] = info.artist
+    audio["ALBUM"] = info.album
+    audio["DATE"] = info.year
+    audio["GENRE"] = info.genre
+    if info.lyrics:
+        audio["LYRICS"] = info.lyrics
+    if info.picture:
+        with open(info.picture, "rb") as img_file:
+            image_data = img_file.read()
+        audio.add_picture(image_data)
+
+
+def _set_mp4_tags(audio, info):
+    audio["\xa9nam"] = info.title
+    audio["\xa9ART"] = info.artist
+    audio["\xa9alb"] = info.album
+    audio["\xa9day"] = info.year
+    audio["\xa9gen"] = info.genre
+    if info.picture:
+        with open(info.picture, "rb") as img_file:
+            image_data = img_file.read()
+        audio["covr"] = [image_data]
+
+
+def _set_ogg_tags(audio, info):
+    audio["TITLE"] = info.title
+    audio["ARTIST"] = info.artist
+    audio["ALBUM"] = info.album
+    audio["DATE"] = info.year
+    audio["GENRE"] = info.genre
+    if info.lyrics:
+        audio["LYRICS"] = info.lyrics
+    if info.picture:
+        with open(info.picture, "rb") as img_file:
+            image_data = img_file.read()
+        audio["metadata_block_picture"] = base64.b64encode(image_data).decode()
+
+
+def _set_asf_tags(audio, info):
+    audio["Title"] = info.title
+    audio["Author"] = info.artist
+    audio["WM/AlbumTitle"] = info.album
+    audio["WM/Year"] = info.year
+    audio["WM/Genre"] = info.genre
+    if info.picture:
+        with open(info.picture, "rb") as img_file:
+            image_data = img_file.read()
+        audio["WM/Picture"] = image_data
+
+
+def _set_wave_tags(audio, info):
+    audio["Title"] = info.title
+    audio["Artist"] = info.artist
+
+
 # 下载播放列表
 async def download_playlist(config, url, dirname):
     title = f"{dirname}/%(title)s.%(ext)s"
@@ -732,6 +867,8 @@ async def download_playlist(config, url, dirname):
         "-x",
         "--audio-format",
         "mp3",
+        "--audio-quality",
+        "0",
         "--paths",
         config.download_path,
         "-o",
@@ -765,6 +902,8 @@ async def download_one_music(config, url, name=""):
         "-x",
         "--audio-format",
         "mp3",
+        "--audio-quality",
+        "0",
         "--paths",
         config.download_path,
         "-o",
@@ -813,6 +952,7 @@ def remove_common_prefix(directory):
 
     log.info(f'Common prefix identified: "{common_prefix}"')
 
+    pattern = re.compile(r"(\d+)[\t 　]*\1")
     for filename in files:
         if filename == common_prefix:
             continue
@@ -820,6 +960,9 @@ def remove_common_prefix(directory):
         if filename.startswith(common_prefix):
             # 构造新的文件名
             new_filename = filename[len(common_prefix) :]
+            match = pattern.match(new_filename)
+            if match:
+                new_filename = match.group(1) + new_filename[match.end() :]
             # 生成完整的文件路径
             old_file_path = os.path.join(directory, filename)
             new_file_path = os.path.join(directory, new_filename)
@@ -856,3 +999,135 @@ def try_add_access_control_param(config, url):
     ).geturl()
 
     return new_url
+
+
+# 判断文件在不在排除目录列表
+def not_in_dirs(filename, ignore_absolute_dirs):
+    file_absolute_path = os.path.abspath(filename)
+    file_dir = os.path.dirname(file_absolute_path)
+    for ignore_dir in ignore_absolute_dirs:
+        if file_dir.startswith(ignore_dir):
+            log.info(f"{file_dir} in {ignore_dir}")
+            return False  # 文件在排除目录中
+
+    return True  # 文件不在排除目录中
+
+
+def is_docker():
+    return os.path.exists("/app/.dockerenv")
+
+
+async def restart_xiaomusic():
+    # 重启 xiaomusic 程序
+    sbp_args = (
+        "supervisorctl",
+        "restart",
+        "xiaomusic",
+    )
+
+    cmd = " ".join(sbp_args)
+    log.info(f"restart_xiaomusic: {cmd}")
+    await asyncio.sleep(2)
+    proc = await asyncio.create_subprocess_exec(*sbp_args)
+    exit_code = await proc.wait()  # 等待子进程完成
+    log.info(f"restart_xiaomusic completed with exit code {exit_code}")
+    return exit_code
+
+
+async def update_version(version: str, lite: bool = True):
+    if not is_docker():
+        ret = "xiaomusic 更新只能在 docker 中进行"
+        log.info(ret)
+        return ret
+    lite_tag = ""
+    if lite:
+        lite_tag = "-lite"
+    arch = get_os_architecture()
+    if "unknown" in arch:
+        log.warning(f"update_version failed: {arch}")
+        return arch
+    # https://github.com/hanxi/xiaomusic/releases/download/main/app-amd64-lite.tar.gz
+    url = f"https://github.hanxi.cc/proxy/hanxi/xiaomusic/releases/download/{version}/app-{arch}{lite_tag}.tar.gz"
+    target_directory = "/app"
+    return await download_and_extract(url, target_directory)
+
+
+def get_os_architecture():
+    """
+    获取操作系统架构类型：amd64、arm64、arm-v7。
+
+    Returns:
+        str: 架构类型
+    """
+    arch = platform.machine().lower()
+
+    if arch in ("x86_64", "amd64"):
+        return "amd64"
+    elif arch in ("aarch64", "arm64"):
+        return "arm64"
+    elif "arm" in arch or "armv7" in arch:
+        return "arm-v7"
+    else:
+        return f"unknown architecture: {arch}"
+
+
+async def download_and_extract(url: str, target_directory: str):
+    ret = "OK"
+    # 创建目标目录
+    os.makedirs(target_directory, exist_ok=True)
+
+    # 使用 aiohttp 异步下载文件
+    async with aiohttp.ClientSession() as session:
+        async with session.get(url) as response:
+            if response.status == 200:
+                file_name = os.path.join(target_directory, url.split("/")[-1])
+                file_name = os.path.normpath(file_name)
+                if not file_name.startswith(target_directory):
+                    log.warning(f"Invalid file path: {file_name}")
+                    return
+                with open(file_name, "wb") as f:
+                    # 以块的方式下载文件，防止内存占用过大
+                    async for chunk in response.content.iter_any():
+                        f.write(chunk)
+                log.info(f"文件下载完成: {file_name}")
+
+                # 解压下载的文件
+                if file_name.endswith(".tar.gz"):
+                    await extract_tar_gz(file_name, target_directory)
+                else:
+                    ret = f"下载失败, 包有问题: {file_name}"
+                log.warning(ret)
+
+            else:
+                ret = f"下载失败, 状态码: {response.status}"
+                log.warning(ret)
+    return ret
+
+
+async def extract_tar_gz(file_name: str, target_directory: str):
+    # 使用 asyncio.create_subprocess_exec 执行 tar 解压命令
+    command = ["tar", "-xzvf", file_name, "-C", target_directory]
+    # 启动子进程执行解压命令
+    await asyncio.create_subprocess_exec(*command)
+    # 不等待子进程完成
+    log.info(f"extract_tar_gz ing {file_name}")
+
+
+def chmodfile(file_path: str):
+    try:
+        os.chmod(file_path, 0o775)
+    except Exception as e:
+        log.info(f"chmodfile failed: {e}")
+
+
+def chmoddir(dir_path: str):
+    # 获取指定目录下的所有文件和子目录
+    for item in os.listdir(dir_path):
+        item_path = os.path.join(dir_path, item)
+        # 确保是文件，且不是目录
+        if os.path.isfile(item_path):
+            try:
+                os.chmod(item_path, 0o775)
+                log.info(f"Changed permissions of file: {item_path}")
+            except Exception as e:
+                log.info(f"chmoddir failed: {e}")

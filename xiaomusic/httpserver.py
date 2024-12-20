@@ -30,10 +30,12 @@ from fastapi.security import HTTPBasic, HTTPBasicCredentials
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 from starlette.background import BackgroundTask
+from starlette.middleware.gzip import GZipMiddleware
 from starlette.responses import FileResponse, Response
 
 from xiaomusic import __version__
 from xiaomusic.utils import (
+    chmoddir,
     convert_file_to_mp3,
     deepcopy_data_no_sensitive_info,
     download_one_music,
@@ -43,7 +45,9 @@ from xiaomusic.utils import (
     is_mp3,
     remove_common_prefix,
     remove_id3_tags,
+    restart_xiaomusic,
     try_add_access_control_param,
+    update_version,
 )
 
 xiaomusic = None
@@ -105,6 +109,8 @@ app.add_middleware(
     allow_methods=["*"],  # 允许使用的请求方法
     allow_headers=["*"],  # 允许携带的 Headers
 )
+# 添加 GZip 中间件
+app.add_middleware(GZipMiddleware, minimum_size=500)
 
 
 def reset_http_server():
@@ -320,6 +326,23 @@ async def musicinfos(
     return ret
 
 
+class MusicInfoObj(BaseModel):
+    musicname: str
+    title: str = ""
+    artist: str = ""
+    album: str = ""
+    year: str = ""
+    genre: str = ""
+    lyrics: str = ""
+    picture: str = ""  # base64
+
+
+@app.post("/setmusictag")
+async def setmusictag(info: MusicInfoObj, Verifcation=Depends(verification)):
+    ret = xiaomusic.set_music_tag(info.musicname, info)
+    return {"ret": ret}
+
+
 @app.get("/curplaylist")
 async def curplaylist(did: str = "", Verifcation=Depends(verification)):
     if not xiaomusic.did_exist(did):
@@ -340,6 +363,44 @@ async def delmusic(data: MusicItem, Verifcation=Depends(verification)):
 
 class UrlInfo(BaseModel):
     url: str
+
+
+class DidPlayMusic(BaseModel):
+    did: str
+    musicname: str = ""
+    searchkey: str = ""
+
+
+@app.post("/playmusic")
+async def playmusic(data: DidPlayMusic, Verifcation=Depends(verification)):
+    did = data.did
+    musicname = data.musicname
+    searchkey = data.searchkey
+    if not xiaomusic.did_exist(did):
+        return {"ret": "Did not exist"}
+
+    log.info(f"playmusic {did} musicname:{musicname} searchkey:{searchkey}")
+    await xiaomusic.do_play(did, musicname, searchkey)
+    return {"ret": "OK"}
+
+
+class DidPlayMusicList(BaseModel):
+    did: str
+    listname: str = ""
+    musicname: str = ""
+
+
+@app.post("/playmusiclist")
+async def playmusiclist(data: DidPlayMusicList, Verifcation=Depends(verification)):
+    did = data.did
+    listname = data.listname
+    musicname = data.musicname
+    if not xiaomusic.did_exist(did):
+        return {"ret": "Did not exist"}
+
+    log.info(f"playmusiclist {did} listname:{listname} musicname:{musicname}")
+    await xiaomusic.do_play_music_list(did, listname, musicname)
+    return {"ret": "OK"}
 
 
 @app.post("/downloadjson")
@@ -447,6 +508,7 @@ async def downloadplaylist(data: DownloadPlayList, Verifcation=Depends(verificat
             log.debug(f"Download dir_path: {dir_path}")
             # 可能只是部分失败，都需要整理下载目录
             remove_common_prefix(dir_path)
+            chmoddir(dir_path)
 
         asyncio.create_task(check_download_proc())
         return {"ret": "OK"}
@@ -465,7 +527,15 @@ class DownloadOneMusic(BaseModel):
 @app.post("/downloadonemusic")
 async def downloadonemusic(data: DownloadOneMusic, Verifcation=Depends(verification)):
     try:
-        await download_one_music(config, data.url, data.name)
+        download_proc = await download_one_music(config, data.url, data.name)
+
+        async def check_download_proc():
+            # 等待子进程完成
+            exit_code = await download_proc.wait()
+            log.info(f"Download completed with exit code {exit_code}")
+            chmoddir(config.download_path)
+
+        asyncio.create_task(check_download_proc())
         return {"ret": "OK"}
     except Exception as e:
         log.exception(f"Execption {e}")
@@ -483,6 +553,111 @@ async def upload_yt_dlp_cookie(file: UploadFile = File(...)):
         "filename": file.filename,
         "file_location": config.yt_dlp_cookies_path,
     }
+
+
+class PlayListObj(BaseModel):
+    name: str = ""  # 歌单名
+
+
+# 新增歌单
+@app.post("/playlistadd")
+async def playlistadd(data: PlayListObj, Verifcation=Depends(verification)):
+    ret = xiaomusic.play_list_add(data.name)
+    if ret:
+        return {"ret": "OK"}
+    return {"ret": "Add failed, may be already exist."}
+
+
+# 移除歌单
+@app.post("/playlistdel")
+async def playlistdel(data: PlayListObj, Verifcation=Depends(verification)):
+    ret = xiaomusic.play_list_del(data.name)
+    if ret:
+        return {"ret": "OK"}
+    return {"ret": "Del failed, may be not exist."}
+
+
+class PlayListUpdateObj(BaseModel):
+    oldname: str  # 旧歌单名字
+    newname: str  # 新歌单名字
+
+
+# 修改歌单名字
+@app.post("/playlistupdatename")
+async def playlistupdatename(
+    data: PlayListUpdateObj, Verifcation=Depends(verification)
+):
+    ret = xiaomusic.play_list_update_name(data.oldname, data.newname)
+    if ret:
+        return {"ret": "OK"}
+    return {"ret": "Update failed, may be not exist."}
+
+
+# 获取所有自定义歌单
+@app.get("/playlistnames")
+async def getplaylistnames(Verifcation=Depends(verification)):
+    names = xiaomusic.get_play_list_names()
+    return {
+        "ret": "OK",
+        "names": names,
+    }
+
+
+class PlayListMusicObj(BaseModel):
+    name: str = ""  # 歌单名
+    music_list: list[str]  # 歌曲名列表
+
+
+# 歌单新增歌曲
+@app.post("/playlistaddmusic")
+async def playlistaddmusic(data: PlayListMusicObj, Verifcation=Depends(verification)):
+    ret = xiaomusic.play_list_add_music(data.name, data.music_list)
+    if ret:
+        return {"ret": "OK"}
+    return {"ret": "Add failed, may be playlist not exist."}
+
+
+# 歌单移除歌曲
+@app.post("/playlistdelmusic")
+async def playlistdelmusic(data: PlayListMusicObj, Verifcation=Depends(verification)):
+    ret = xiaomusic.play_list_del_music(data.name, data.music_list)
+    if ret:
+        return {"ret": "OK"}
+    return {"ret": "Del failed, may be playlist not exist."}
+
+
+# 歌单更新歌曲
+@app.post("/playlistupdatemusic")
+async def playlistupdatemusic(
+    data: PlayListMusicObj, Verifcation=Depends(verification)
+):
+    ret = xiaomusic.play_list_update_music(data.name, data.music_list)
+    if ret:
+        return {"ret": "OK"}
+    return {"ret": "Del failed, may be playlist not exist."}
+
+
+# 获取歌单中所有歌曲
+@app.get("/playlistmusics")
+async def getplaylist(name: str, Verifcation=Depends(verification)):
+    ret, musics = xiaomusic.play_list_musics(name)
+    return {
+        "ret": "OK",
+        "musics": musics,
+    }
+
+
+# 更新版本
+@app.post("/updateversion")
+async def updateversion(
+    version: str = "", lite: bool = True, Verifcation=Depends(verification)
+):
+    ret = await update_version(version, lite)
+    if ret != "OK":
+        return {"ret": ret}
+
+    asyncio.create_task(restart_xiaomusic())
+    return {"ret": "OK"}
 
 
 async def file_iterator(file_path, start, end):

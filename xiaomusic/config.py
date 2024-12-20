@@ -6,22 +6,27 @@ import os
 from dataclasses import asdict, dataclass, field
 from typing import get_type_hints
 
+from xiaomusic.const import (
+    PLAY_TYPE_ALL,
+    PLAY_TYPE_ONE,
+    PLAY_TYPE_RND,
+    PLAY_TYPE_SEQ,
+    PLAY_TYPE_SIN,
+)
 from xiaomusic.utils import validate_proxy
 
 
 # 默认口令
 def default_key_word_dict():
     return {
-        "播放歌曲": "play",
-        "播放本地歌曲": "playlocal",
-        "关机": "stop",
         "下一首": "play_next",
         "上一首": "play_prev",
         "单曲循环": "set_play_type_one",
         "全部循环": "set_play_type_all",
-        "随机播放": "set_random_play",
+        "随机播放": "set_play_type_rnd",
+        "单曲播放": "set_play_type_sin",
+        "顺序播放": "set_play_type_seq",
         "分钟后关机": "stop_after_minute",
-        "播放列表": "play_music_list",
         "刷新列表": "gen_music_list",
         "加入收藏": "add_to_favorites",
         "收藏歌曲": "add_to_favorites",
@@ -47,12 +52,13 @@ KEY_WORD_ARG_BEFORE_DICT = {
 def default_key_match_order():
     return [
         "分钟后关机",
-        "播放歌曲",
         "下一首",
         "上一首",
         "单曲循环",
         "全部循环",
         "随机播放",
+        "单曲播放",
+        "顺序播放",
         "关机",
         "刷新列表",
         "播放列表第",
@@ -82,9 +88,8 @@ class Config:
     miio_tts_command: str = os.getenv("MIIO_TTS_CMD", "")
     cookie: str = ""
     verbose: bool = os.getenv("XIAOMUSIC_VERBOSE", "").lower() == "true"
-    music_path: str = os.getenv(
-        "XIAOMUSIC_MUSIC_PATH", "music"
-    )  # 只能是music目录下的子目录
+    music_path: str = os.getenv("XIAOMUSIC_MUSIC_PATH", "music")
+    temp_path: str = os.getenv("XIAOMUSIC_TEMP_PATH", "music/tmp")
     download_path: str = os.getenv("XIAOMUSIC_DOWNLOAD_PATH", "music/download")
     conf_path: str = os.getenv("XIAOMUSIC_CONF_PATH", "conf")
     cache_dir: str = os.getenv("XIAOMUSIC_CACHE_DIR", "cache")
@@ -98,9 +103,10 @@ class Config:
     ffmpeg_location: str = os.getenv("XIAOMUSIC_FFMPEG_LOCATION", "./ffmpeg/bin")
     active_cmd: str = os.getenv(
         "XIAOMUSIC_ACTIVE_CMD",
-        "play,set_random_play,playlocal,play_music_list,play_music_list_index,stop_after_minute,stop",
+        "play,search_play,set_play_type_rnd,playlocal,search_playlocal,play_music_list,play_music_list_index,stop_after_minute,stop",
     )
     exclude_dirs: str = os.getenv("XIAOMUSIC_EXCLUDE_DIRS", "@eaDir,tmp")
+    ignore_tag_dirs: str = os.getenv("XIAOMUSIC_IGNORE_TAG_DIRS", "")
     music_path_depth: int = int(os.getenv("XIAOMUSIC_MUSIC_PATH_DEPTH", "10"))
     disable_httpauth: bool = (
         os.getenv("XIAOMUSIC_DISABLE_HTTPAUTH", "true").lower() == "true"
@@ -122,7 +128,7 @@ class Config:
         "XIAOMUSIC_USE_MUSIC_AUDIO_ID", "1582971365183456177"
     )
     use_music_id: str = os.getenv("XIAOMUSIC_USE_MUSIC_ID", "355454500")
-    log_file: str = os.getenv("XIAOMUSIC_LOG_FILE", "/tmp/xiaomusic.txt")
+    log_file: str = os.getenv("XIAOMUSIC_LOG_FILE", "xiaomusic.log.txt")
     # 模糊搜索匹配的最低相似度阈值
     fuzzy_match_cutoff: float = float(os.getenv("XIAOMUSIC_FUZZY_MATCH_CUTOFF", "0.6"))
     # 开启模糊搜索
@@ -135,7 +141,11 @@ class Config:
     keywords_playlocal: str = os.getenv(
         "XIAOMUSIC_KEYWORDS_PLAYLOCAL", "播放本地歌曲,本地播放歌曲"
     )
+    keywords_search_playlocal: str = os.getenv(
+        "XIAOMUSIC_KEYWORDS_SEARCH_PLAYLOCAL", "本地搜索播放"
+    )
     keywords_play: str = os.getenv("XIAOMUSIC_KEYWORDS_PLAY", "播放歌曲,放歌曲")
+    keywords_search_play: str = os.getenv("XIAOMUSIC_KEYWORDS_SEARCH_PLAY", "搜索播放")
     keywords_stop: str = os.getenv("XIAOMUSIC_KEYWORDS_STOP", "关机,暂停,停止,停止播放")
     keywords_playlist: str = os.getenv(
         "XIAOMUSIC_KEYWORDS_PLAYLIST", "播放列表,播放歌单"
@@ -163,8 +173,29 @@ class Config:
     enable_yt_dlp_cookies: bool = (
         os.getenv("XIAOMUSIC_ENABLE_YT_DLP_COOKIES", "false").lower() == "true"
     )
+    enable_save_tag: bool = (
+        os.getenv("XIAOMUSIC_ENABLE_SAVE_TAG", "false").lower() == "true"
+    )
     get_ask_by_mina: bool = (
         os.getenv("XIAOMUSIC_GET_ASK_BY_MINA", "false").lower() == "true"
+    )
+    play_type_one_tts_msg: str = os.getenv(
+        "XIAOMUSIC_PLAY_TYPE_ONE_TTS_MSG", "已经设置为单曲循环"
+    )
+    play_type_all_tts_msg: str = os.getenv(
+        "XIAOMUSIC_PLAY_TYPE_ALL_TTS_MSG", "已经设置为全部循环"
+    )
+    play_type_rnd_tts_msg: str = os.getenv(
+        "XIAOMUSIC_PLAY_TYPE_RND_TTS_MSG", "已经设置为随机播放"
+    )
+    play_type_sin_tts_msg: str = os.getenv(
+        "XIAOMUSIC_PLAY_TYPE_SIN_TTS_MSG", "已经设置为单曲播放"
+    )
+    play_type_seq_tts_msg: str = os.getenv(
+        "XIAOMUSIC_PLAY_TYPE_SEQ_TTS_MSG", "已经设置为顺序播放"
+    )
+    recently_added_playlist_len: int = int(
+        os.getenv("XIAOMUSIC_RECENTLY_ADDED_PLAYLIST_LEN", "50")
     )
 
     def append_keyword(self, keys, action):
@@ -184,10 +215,15 @@ class Config:
         self.key_match_order = default_key_match_order()
         self.key_word_dict = default_key_word_dict()
         self.append_keyword(self.keywords_playlocal, "playlocal")
+        self.append_keyword(self.keywords_search_playlocal, "search_playlocal")
         self.append_keyword(self.keywords_play, "play")
+        self.append_keyword(self.keywords_search_play, "search_play")
         self.append_keyword(self.keywords_stop, "stop")
         self.append_keyword(self.keywords_playlist, "play_music_list")
         self.append_user_keyword()
+        self.key_match_order = [
+            x for x in self.key_match_order if x in self.key_word_dict
+        ]
 
     def __post_init__(self) -> None:
         if self.proxy:
@@ -282,3 +318,30 @@ class Config:
             os.makedirs(self.conf_path)
         cookies_path = os.path.join(self.conf_path, "yt-dlp-cookie.txt")
         return cookies_path
+
+    @property
+    def temp_dir(self):
+        if not os.path.exists(self.temp_path):
+            os.makedirs(self.temp_path)
+        return self.temp_path
+
+    def get_play_type_tts(self, play_type):
+        if play_type == PLAY_TYPE_ONE:
+            return self.play_type_one_tts_msg
+        if play_type == PLAY_TYPE_ALL:
+            return self.play_type_all_tts_msg
+        if play_type == PLAY_TYPE_RND:
+            return self.play_type_rnd_tts_msg
+        if play_type == PLAY_TYPE_SIN:
+            return self.play_type_sin_tts_msg
+        if play_type == PLAY_TYPE_SEQ:
+            return self.play_type_seq_tts_msg
+        return ""
+
+    def get_ignore_tag_dirs(self):
+        ignore_tag_absolute_dirs = []
+        for ignore_tag_dir in self.ignore_tag_dirs.split(","):
+            if ignore_tag_dir:
+                ignore_tag_absolute_path = os.path.abspath(ignore_tag_dir)
+                ignore_tag_absolute_dirs.append(ignore_tag_absolute_path)
+        return ignore_tag_absolute_dirs
