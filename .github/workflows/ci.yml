@@ -9,9 +9,7 @@ on:
   workflow_dispatch:
 
 env:
-  TEST_TAG: ${{ secrets.DOCKERHUB_USERNAME }}/xiaomusic:${{ github.ref_name }}
   LATEST_TAG: ${{ secrets.DOCKERHUB_USERNAME }}/xiaomusic:latest
-  STABLE_TAG: ${{ secrets.DOCKERHUB_USERNAME }}/xiaomusic:stable
 
 permissions:
   contents: write
