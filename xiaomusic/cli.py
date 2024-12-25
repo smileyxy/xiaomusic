@@ -7,7 +7,7 @@ import signal
 
 import sentry_sdk
 from sentry_sdk.integrations.asyncio import AsyncioIntegration
-from sentry_sdk.integrations.logging import LoggingIntegration
+from sentry_sdk.integrations.logging import LoggingIntegration, ignore_logger
 
 LOGO = r"""
  __  __  _                   __  __                 _
@@ -20,9 +20,8 @@ LOGO = r"""
 
 
 sentry_sdk.init(
-    dsn="https://659690a901a37237df8097a9eb95e60f@github.hanxi.cc/sentry/4508470200434688",
-    traces_sample_rate=0.1,
-    profiles_sample_rate=0.05,
+    # dsn="https://659690a901a37237df8097a9eb95e60f@github.hanxi.cc/sentry/4508470200434688",
+    dsn="https://ffe4962642d04b29afe62ebd1a065231@glitchtip.hanxi.cc/1",
     integrations=[
         AsyncioIntegration(),
         LoggingIntegration(
@@ -32,6 +31,7 @@ sentry_sdk.init(
     ],
     # debug=True,
 )
+ignore_logger("miservice")
 
 
 def main():

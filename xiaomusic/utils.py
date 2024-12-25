@@ -336,7 +336,7 @@ async def get_local_music_duration(filename, ffmpeg_location="./ffmpeg/bin"):
             m = await loop.run_in_executor(None, mutagen.File, filename)
         duration = m.info.length
     except Exception as e:
-        log.error(f"Error getting local music {filename} duration: {e}")
+        log.warning(f"Error getting local music {filename} duration: {e}")
     return duration
 
 
@@ -643,14 +643,19 @@ def _save_picture(picture_data, save_root, file_path):
     try:
         _resize_save_image(picture_data, picture_path)
     except Exception as e:
-        log.exception(f"Error _resize_save_image: {e}")
+        log.warning(f"Error _resize_save_image: {e}")
     return picture_path
 
 
 def _resize_save_image(image_bytes, save_path, max_size=300):
     # 将 bytes 转换为 PIL Image 对象
-    image = Image.open(io.BytesIO(image_bytes))
-    image = image.convert("RGB")
+    image = None
+    try:
+        image = Image.open(io.BytesIO(image_bytes))
+        image = image.convert("RGB")
+    except Exception as e:
+        log.warning(f"Error _resize_save_image: {e}")
+        return
 
     # 获取原始尺寸
     original_width, original_height = image.size
@@ -673,8 +678,16 @@ def _resize_save_image(image_bytes, save_path, max_size=300):
 
 
 def extract_audio_metadata(file_path, save_root):
-    audio = mutagen.File(file_path)
     metadata = Metadata()
+
+    audio = None
+    try:
+        audio = mutagen.File(file_path)
+    except Exception as e:
+        log.warning(f"Error extract_audio_metadata file: {file_path} {e}")
+    if audio is None:
+        return asdict(metadata)
+
     tags = audio.tags
     if tags is None:
         return asdict(metadata)
@@ -952,7 +965,7 @@ def remove_common_prefix(directory):
 
     log.info(f'Common prefix identified: "{common_prefix}"')
 
-    pattern = re.compile(r"(\d+)[\t 　]*\1")
+    pattern = re.compile(r"^(\d+)\s+\d*(.+?)\.(.*$)")
     for filename in files:
         if filename == common_prefix:
             continue
@@ -960,9 +973,12 @@ def remove_common_prefix(directory):
         if filename.startswith(common_prefix):
             # 构造新的文件名
             new_filename = filename[len(common_prefix) :]
-            match = pattern.match(new_filename)
+            match = pattern.search(new_filename.strip())
             if match:
-                new_filename = match.group(1) + new_filename[match.end() :]
+                num = match.group(1)
+                name = match.group(2).replace(".", " ").strip()
+                suffix = match.group(3)
+                new_filename = f"{num}.{name}.{suffix}"
             # 生成完整的文件路径
             old_file_path = os.path.join(directory, filename)
             new_file_path = os.path.join(directory, new_filename)
@@ -1047,7 +1063,7 @@ async def update_version(version: str, lite: bool = True):
         log.warning(f"update_version failed: {arch}")
         return arch
     # https://github.com/hanxi/xiaomusic/releases/download/main/app-amd64-lite.tar.gz
-    url = f"https://github.hanxi.cc/proxy/hanxi/xiaomusic/releases/download/{version}/app-{arch}{lite_tag}.tar.gz"
+    url = f"https://gproxy.hanxi.cc/proxy/hanxi/xiaomusic/releases/download/{version}/app-{arch}{lite_tag}.tar.gz"
     target_directory = "/app"
     return await download_and_extract(url, target_directory)
 

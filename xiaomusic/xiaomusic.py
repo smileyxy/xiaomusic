@@ -76,6 +76,7 @@ class XiaoMusic:
         self.all_music = {}
         self._all_radio = {}  # 电台列表
         self.music_list = {}  # 播放列表 key 为目录名, value 为 play_list
+        self.default_music_list_names = []  # 非自定义个歌单
         self.devices = {}  # key 为 did
         self.running_task = []
         self.all_music_tags = {}  # 歌曲额外信息
@@ -253,6 +254,7 @@ class XiaoMusic:
                     device.device_id = device_id
                     device.hardware = hardware
                     device.name = name
+                    device.play_type = PLAY_TYPE_RND
                     devices[did] = device
             self.config.devices = devices
             self.log.info(f"选中的设备: {devices}")
@@ -265,7 +267,7 @@ class XiaoMusic:
             return cookie_jar
 
         if not os.path.exists(self.mi_token_home):
-            self.log.error(f"{self.mi_token_home} file not exist")
+            self.log.warning(f"{self.mi_token_home} file not exist")
             return None
 
         with open(self.mi_token_home, encoding="utf-8") as f:
@@ -325,7 +327,7 @@ class XiaoMusic:
 
                 # 检查响应状态码
                 if r.status != 200:
-                    self.log.error(f"Request failed with status {r.status}")
+                    self.log.warning(f"Request failed with status {r.status}")
                     continue
 
             except asyncio.CancelledError:
@@ -698,6 +700,9 @@ class XiaoMusic:
         for _, play_list in self.music_list.items():
             play_list.sort(key=custom_sort_key)
 
+        # 非自定义个歌单
+        self.default_music_list_names = list(self.music_list.keys())
+
         # 刷新自定义歌单
         self.refresh_custom_play_list()
 
@@ -716,6 +721,11 @@ class XiaoMusic:
 
     def refresh_custom_play_list(self):
         try:
+            # 删除旧的自定义个歌单
+            for k in list(self.music_list.keys()):
+                if k not in self.default_music_list_names:
+                    del self.music_list[k]
+            # 合并新的自定义个歌单
             custom_play_list = self.get_custom_play_list()
             for k, v in custom_play_list.items():
                 self.music_list[k] = list(v)
@@ -1170,12 +1180,13 @@ class XiaoMusic:
         play_list = custom_play_list[oldname]
         custom_play_list.pop(oldname)
         custom_play_list[newname] = play_list
+        self.save_custom_play_list()
         return True
 
     # 获取所有自定义歌单
     def get_play_list_names(self):
         custom_play_list = self.get_custom_play_list()
-        return custom_play_list.keys()
+        return list(custom_play_list.keys())
 
     # 获取歌单中所有歌曲
     def play_list_musics(self, name):
@@ -1646,7 +1657,7 @@ class XiaoMusicDevice:
             )
             await self.stop_if_xiaoai_is_playing(device_id)
         except Exception as e:
-            self.log.exception(f"Execption {e}")
+            self.log.warning(f"Execption {e}")
 
     async def get_if_xiaoai_is_playing(self):
         playing_info = await self.xiaomusic.mina_service.player_get_status(
