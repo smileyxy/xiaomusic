@@ -5,9 +5,9 @@
     <meta name="viewport" content="width=device-width">
     <title>小爱音箱操控面板</title>
     <link href="https://fonts.googleapis.com/icon?family=Material+Icons" rel="stylesheet">
-    <script src="./jquery-3.7.1.min.js?version=1735045382"></script>
-    <script src="./setting.js?version=1735045382"></script>
-    <link rel="stylesheet" type="text/css" href="./main.css?version=1735045382">
+    <script src="./jquery-3.7.1.min.js?version=1735714554"></script>
+    <script src="./setting.js?version=1735714554"></script>
+    <link rel="stylesheet" type="text/css" href="./main.css?version=1735714554">
 
     <!-- Google tag (gtag.js) -->
     <script async src="https://www.googletagmanager.com/gtag/js?id=G-Z09NC1K7ZW"></script>
@@ -19,7 +19,7 @@
     </script>
 
     <!-- umami -->
-    <script defer src="https://umami.hanxi.cc/script.js" data-website-id="7bfb0890-4115-4260-8892-b391513e7e99"></script>
+    <script async defer src="https://umami.hanxi.cc/script.js" data-website-id="7bfb0890-4115-4260-8892-b391513e7e99"></script>
 
     <!--
 <script src="https://unpkg.com/vconsole@latest/dist/vconsole.min.js"></script>
@@ -50,22 +50,20 @@ var vConsole = new window.VConsole();
         <label for="password">*小米密码:</label>
         <input id="password" type="password" placeholder="填写小米登录密码" />
 
-        <label for="hostname">*XIAOMUSIC_HOSTNAME(IP或域名):</label>
+        <label for="hostname">*XIAOMUSIC_HOSTNAME(NAS的IP或域名):</label>
         <input id="hostname" type="text" />
+
+        <label for="public_port">*本地端口(0表示跟容器端口一致):</label>
+        <input id="public_port" type="number" value="0" />
       </div>
       <hr>
+
       <div class="rows">
         <label for="verbose">是否开启调试日志:</label>
         <select id="verbose">
-          <option value="true" selected>true</option>
-          <option value="false">false</option>
+          <option value="true">true</option>
+          <option value="false" selected>false</option>
         </select>
-
-        <label for="port">监听端口(修改后需要重启):</label>
-        <input id="port" type="number" value="8090" />
-
-        <label for="public_port">外网访问端口(0表示跟监听端口一致):</label>
-        <input id="public_port" type="number" value="0" />
 
         <label for="group_list">设备分组配置:<a href="https://github.com/hanxi/xiaomusic/issues/65#issuecomment-2215736529" target="_blank">文档</a></label>
         <input id="group_list" type="text" placeholder="did1:组名1,did2:组名1,did3:组名2" />
@@ -111,6 +109,9 @@ var vConsole = new window.VConsole();
 
         <label for="proxy">XIAOMUSIC_PROXY(ytsearch需要):</label>
         <input id="proxy" type="text" placeholder="http://192.168.2.5:8080" />
+
+        <label for="loudnorm">均衡歌曲音量大小(loudnorm滤镜):</label>
+        <input id="loudnorm" type="text" placeholder="loudnorm=I=-14:TP=-1.5:LRA=6" />
 
         <label for="remove_id3tag">去除MP3 ID3v2和填充:</label>
         <select id="remove_id3tag">
@@ -167,6 +168,12 @@ var vConsole = new window.VConsole();
         <select id="continue_play">
           <option value="true">true</option>
           <option value="false" selected>false</option>
+        </select>
+
+        <label for="enable_pull_ask">获取对话记录:</label>
+        <select id="enable_pull_ask">
+          <option value="true" selected>true</option>
+          <option value="false">false</option>
         </select>
 
         <label for="pull_ask_sec">获取对话记录间隔(秒):</label>

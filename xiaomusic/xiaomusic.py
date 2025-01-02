@@ -12,7 +12,6 @@ import urllib.parse
 from collections import OrderedDict
 from dataclasses import asdict
 from logging.handlers import RotatingFileHandler
-from pathlib import Path
 
 from aiohttp import ClientSession, ClientTimeout
 from miservice import MiAccount, MiIOService, MiNAService, miio_command
@@ -64,7 +63,8 @@ class XiaoMusic:
     def __init__(self, config: Config):
         self.config = config
 
-        self.mi_token_home = Path.home() / ".mi.token"
+        self.mi_token_home = os.path.join(self.config.conf_path, ".mi.token")
+        self.session = None
         self.last_timestamp = {}  # key为 did. timestamp last call mi speaker
         self.last_record = None
         self.cookie_jar = None
@@ -178,6 +178,11 @@ class XiaoMusic:
     async def poll_latest_ask(self):
         async with ClientSession() as session:
             while True:
+                if not self.config.enable_pull_ask:
+                    self.log.debug("Listening new message disabled")
+                    await asyncio.sleep(5)
+                    continue
+
                 self.log.debug(
                     f"Listening new message, timestamp: {self.last_timestamp}"
                 )
@@ -214,6 +219,7 @@ class XiaoMusic:
                             break
 
     async def init_all_data(self, session):
+        self.mi_token_home = os.path.join(self.config.conf_path, ".mi.token")
         await self.login_miboy(session)
         await self.try_update_device_id()
         cookie_jar = self.get_cookie()
@@ -774,15 +780,17 @@ class XiaoMusic:
             await asyncio.sleep(3600)
 
     async def run_forever(self):
+        self.log.info("run_forever start")
         self.try_gen_all_music_tag()  # 事件循环开始后调用一次
         self.crontab.start()
-        await self.analytics.send_startup_event()
+        asyncio.create_task(self.analytics.send_startup_event())
         analytics_task = asyncio.create_task(self.analytics_task_daily())
         assert (
             analytics_task is not None
         )  # to keep the reference to task, do not remove this
         async with ClientSession() as session:
             self.session = session
+            self.log.info(f"run_forever session:{self.session}")
             await self.init_all_data(session)
             task = asyncio.create_task(self.poll_latest_ask())
             assert task is not None  # to keep the reference to task, do not remove this
@@ -1337,7 +1345,8 @@ class XiaoMusic:
         for handler in self.log.handlers:
             handler.close()
         self.setup_logger()
-        await self.init_all_data(self.session)
+        if self.session:
+            await self.init_all_data(self.session)
         self._gen_all_music_list()
         self.update_devices()
 
@@ -1724,6 +1733,9 @@ class XiaoMusicDevice:
 
         if self.config.enable_yt_dlp_cookies:
             sbp_args += ("--cookies", f"{self.config.yt_dlp_cookies_path}")
+
+        if self.config.loudnorm:
+            sbp_args += ("--postprocessor-args", f"-af {self.config.loudnorm}")
 
         cmd = " ".join(sbp_args)
         self.log.info(f"download cmd: {cmd}")

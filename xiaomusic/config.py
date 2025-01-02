@@ -97,6 +97,7 @@ class Config:
     port: int = int(os.getenv("XIAOMUSIC_PORT", "8090"))  # 监听端口
     public_port: int = int(os.getenv("XIAOMUSIC_PUBLIC_PORT", 0))  # 歌曲访问端口
     proxy: str = os.getenv("XIAOMUSIC_PROXY", None)
+    loudnorm: str = os.getenv("XIAOMUSIC_LOUDNORM", None)  # 均衡音量参数
     search_prefix: str = os.getenv(
         "XIAOMUSIC_SEARCH", "bilisearch:"
     )  # "bilisearch:" or "ytsearch:"
@@ -169,6 +170,9 @@ class Config:
         os.getenv("XIAOMUSIC_CONTINUE_PLAY", "false").lower() == "true"
     )
     pull_ask_sec: int = int(os.getenv("XIAOMUSIC_PULL_ASK_SEC", "1"))
+    enable_pull_ask: bool = (
+        os.getenv("XIAOMUSIC_ENABLE_PULL_ASK", "true").lower() == "true"
+    )
     crontab_json: str = os.getenv("XIAOMUSIC_CRONTAB_JSON", "")  # 定时任务
     enable_yt_dlp_cookies: bool = (
         os.getenv("XIAOMUSIC_ENABLE_YT_DLP_COOKIES", "false").lower() == "true"

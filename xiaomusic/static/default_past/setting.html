@@ -18,7 +18,7 @@
     </script>
 
     <!-- umami -->
-    <script defer src="https://umami.hanxi.cc/script.js" data-website-id="7bfb0890-4115-4260-8892-b391513e7e99"></script>
+    <script async defer src="https://umami.hanxi.cc/script.js" data-website-id="7bfb0890-4115-4260-8892-b391513e7e99"></script>
 
     <!--
 <script src="https://unpkg.com/vconsole@latest/dist/vconsole.min.js"></script>
@@ -110,6 +110,9 @@ var vConsole = new window.VConsole();
 
         <label for="proxy">XIAOMUSIC_PROXY(ytsearch需要):</label>
         <input id="proxy" type="text" placeholder="http://192.168.2.5:8080" />
+
+        <label for="loudnorm">均衡歌曲音量大小(loudnorm滤镜):</label>
+        <input id="loudnorm" type="text" placeholder="loudnorm=I=-14:TP=-1.5:LRA=6" />
 
         <label for="remove_id3tag">去除MP3 ID3v2和填充:</label>
         <select id="remove_id3tag">
