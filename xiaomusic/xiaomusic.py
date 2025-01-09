@@ -1252,6 +1252,9 @@ class XiaoMusic:
 
     # 设置音量
     async def set_volume(self, did="", arg1=0, **kwargs):
+        if did not in self.devices:
+            self.log.info(f"设备 did:{did} 不存在, 不能设置音量")
+            return
         volume = int(arg1)
         return await self.devices[did].set_volume(volume)
 
@@ -1427,10 +1430,10 @@ class XiaoMusicDevice:
         return self.device.cur_music
 
     def get_offset_duration(self):
-        if not self.isplaying():
-            return -1, -1
-        offset = time.time() - self._start_time - self._paused_time
         duration = self._duration
+        if not self.isplaying():
+            return 0, duration
+        offset = time.time() - self._start_time - self._paused_time
         return offset, duration
 
     # 初始化播放列表

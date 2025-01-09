@@ -374,14 +374,20 @@ $("#play_music_list").on("click", () => {
   });
 });
 
-$("#playurl").on("click", () => {
+function playUrl() {
   var url = $("#music-url").val();
   const encoded_url = encodeURIComponent(url);
   $.get(`/playurl?url=${encoded_url}&did=${did}`, function (data, status) {
     console.log(data);
   });
-});
+}
 
+function playTts() {
+  var value = $("#text-tts").val();
+  $.get(`/playtts?text=${value}&did=${did}`, function (data, status) {
+    console.log(data);
+  });
+}
 
 function do_play_music(musicname, searchkey) {
   $.ajax({
@@ -709,5 +715,6 @@ function confirmSearch() {
   }
   console.log("confirmSearch", filename, search_key);
   do_play_music(filename, search_key);
+  toggleSearch();
 }
 
