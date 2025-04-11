@@ -806,7 +806,7 @@ class XiaoMusic:
         self.log.info(f"已启动对 {self.music_path} 的目录监控。")
 
     def _on_file_change(self):
-        self.log.info("检测到音乐目录文件变化，正在刷新歌曲列表。")
+        self.log.info("检测到目录音乐文件变化，正在刷新歌曲列表。")
         self._gen_all_music_list()
 
     def stop_file_watch(self):
@@ -1715,10 +1715,6 @@ class XiaoMusicDevice:
         self.log.info(f"【{name}】已经开始播放了")
         await self.xiaomusic.analytics.send_play_event(name, sec, self.hardware)
 
-        if self.device.play_type == PLAY_TYPE_SIN:
-            self.log.info(f"【{name}】单曲播放时不会设置下一首歌的定时器")
-            return
-
         # 设置下一首歌曲的播放定时器
         if sec <= 1:
             self.log.info(f"【{name}】不会设置下一首歌的定时器")
@@ -2037,7 +2033,11 @@ class XiaoMusicDevice:
                 self.log.info("定时器时间到了")
                 if self._next_timer:
                     self._next_timer = None
-                    await self._play_next()
+                    if self.device.play_type == PLAY_TYPE_SIN:
+                        self.log.info("单曲播放不继续播放下一首")
+                        await self.stop(arg1="notts")
+                    else:
+                        await self._play_next()
                 else:
                     self.log.info("定时器时间到了但是不见了")
 
@@ -2183,7 +2183,7 @@ class XiaoMusicDevice:
         return "全部"
 
 
-# 目录监控类，使用延迟防抖
+# 目录监控类，使用延迟防抖，仅监控音乐文件
 class XiaoMusicPathWatch(FileSystemEventHandler):
     def __init__(self, callback, debounce_delay, loop):
         self.callback = callback
@@ -2192,7 +2192,20 @@ class XiaoMusicPathWatch(FileSystemEventHandler):
         self._debounce_handle = None
 
     def on_any_event(self, event):
-        self.schedule_callback()
+        if event.is_directory:
+            return  # 忽略目录事件
+
+        # 处理文件事件
+        src_ext = os.path.splitext(event.src_path)[1].lower()
+        # 处理移动事件的目标路径
+        if hasattr(event, "dest_path"):
+            dest_ext = os.path.splitext(event.dest_path)[1].lower()
+            if dest_ext in SUPPORT_MUSIC_TYPE:
+                self.schedule_callback()
+                return
+
+        if src_ext in SUPPORT_MUSIC_TYPE:
+            self.schedule_callback()
 
     def schedule_callback(self):
         def _execute_callback():
